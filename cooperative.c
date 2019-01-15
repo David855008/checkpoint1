@@ -15,8 +15,8 @@
 __idata __at(0x20) char SSPointers[MAXTHREADS];
 __idata __at(0x24) char bitmap[MAXTHREADS];
 __idata __at(0x28) char IDnum;
-__idata __at(0x2A) char temp1;
-__idata __at(0x2B) char temp2;
+__idata __at(0x2A) char SP_save;
+__idata __at(0x2B) char IDsave;
 __idata __at(0x2C) char i;
 
 /*
@@ -38,7 +38,7 @@ __idata __at(0x2C) char i;
                             clr RS1           \
                                 clr RS0       \
                                     __endasm; \
-        SSPointers[IDnum] = SP;                  \
+        SSPointers[IDnum] = SP;               \
     }
 
 /*
@@ -52,7 +52,7 @@ __idata __at(0x2C) char i;
  */
 #define RESTORESTATE                  \
     {                                 \
-        SP = SSPointers[IDnum];          \
+        SP = SSPointers[IDnum];       \
         __asm pop PSW                 \
             pop DPH                   \
                 pop DPL               \
@@ -103,56 +103,83 @@ void Bootstrap(void)
  */
 ThreadID ThreadCreate(FunctionPtr fp)
 {
-    /*
-         * @@@ [2 pts] 
-         * check to see we have not reached the max #threads.
-         * if so, return -1, which is not a valid thread ID.
-         */
-    for(i=0;i<MAXTHREADS;i++) if(!bitmap[i]) break;
-    if(i==MAXTHREADS){
+   
+    /** @@@ [2 pts] */
+    /** check to see we have not reached the max #threads.
+    * if so, return -1, which is not a valid thread ID.
+    */
+    for (i = 0; i < MAXTHREADS; i++)
+        if (!bitmap[i])
+            break;
+    if (i == MAXTHREADS)
+    {
         return -1;
     }
-    /*
-         * @@@ [5 pts]
-         *     otherwise, find a thread ID that is not in use,
-         *     and grab it. (can check the bit mask for threads),
-         */
-    for(i=0;i<MAXTHREADS;i++) if(!bitmap[i]) break;
-        /*
-         * @@@ [18 pts] below
-         * a. update the bit mask 
-             (and increment thread count, if you use a thread count, 
-              but it is optional)
-           b. calculate the starting stack location for new thread
-           c. save the current SP in a temporary
-              set SP to the starting location for the new thread
-           d. push the return address fp (2-byte parameter to
-              ThreadCreate) onto stack so it can be the return
-              address to resume the thread. Note that in SDCC
-              convention, 2-byte ptr is passed in DPTR.  but
-              push instruction can only push it as two separate
-              registers, DPL and DPH.
-           e. we want to initialize the registers to 0, so we
-              assign a register to 0 and push it four times
-              for ACC, B, DPL, DPH.  Note: push #0 will not work
-              because push takes only direct address as its operand,
-              but it does not take an immediate (literal) operand.
-           f. finally, we need to push PSW (processor status word)
-              register, which consist of bits
-               CY AC F0 RS1 RS0 OV UD P
-              all bits can be initialized to zero, except <RS1:RS0>
-              which selects the register bank.  
-              Thread 0 uses bank 0, Thread 1 uses bank 1, etc.
-              Setting the bits to 00B, 01B, 10B, 11B will select 
-              the register bank so no need to push/pop registers
-              R0-R7.  So, set PSW to 
-              00000000B for thread 0, 00001000B for thread 1,
-              00010000B for thread 2, 00011000B for thread 3.
-           g. write the current stack pointer to the saved stack
-              pointer array for this newly created thread ID
-           h. set SP to the saved SP in step c.
-           i. finally, return the newly created thread ID.
-         */
+    
+    /** @@@ [5 pts]*/
+    /**     otherwise, find a thread ID that is not in use,
+     *     and grab it. (can check the bit mask for threads),
+     */
+    for (i = 0; i < MAXTHREADS; i++)
+        if (!bitmap[i])
+            break;
+    
+    /** @@@ [18 pts] below*/
+    /** a. update the bit mask 
+     (and increment thread count, if you use a thread count, 
+        but it is optional)*/
+    SP_save = SP;
+    bitmap[i] = 1;
+    SP = 0x3F + i * 0x10;
+    IDsave = i<<3;
+    
+    /*b. calculate the starting stack location for new thread
+    c. save the current SP in a temporary
+        set SP to the starting location for the new thread
+    d. push the return address fp (2-byte parameter to
+        ThreadCreate) onto stack so it can be the return
+        address to resume the thread. Note that in SDCC
+        convention, 2-byte ptr is passed in DPTR.  but
+        push instruction can only push it as two separate
+        registers, DPL and DPH.
+    e. we want to initialize the registers to 0, so we
+        assign a register to 0 and push it four times
+        for ACC, B, DPL, DPH.  Note: push #0 will not work
+        because push takes only direct address as its operand,
+        but it does not take an immediate (literal) operand.
+        */
+        __asm
+    push DPL
+    push DPH
+    mov a,#0x00
+    push a
+    push a
+    push a
+    push a
+    __endasm;
+
+    /*f. finally, we need to push PSW (processor status word)
+        register, which consist of bits
+        CY AC F0 RS1 RS0 OV UD P
+        all bits can be initialized to zero, except <RS1:RS0>
+        which selects the register bank.  
+        Thread 0 uses bank 0, Thread 1 uses bank 1, etc.
+        Setting the bits to 00B, 01B, 10B, 11B will select 
+        the register bank so no need to push/pop registers
+        R0-R7.  So, set PSW to 
+        00000000B for thread 0, 00001000B for thread 1,
+        00010000B for thread 2, 00011000B for thread 3.*/
+    __asm
+    push _IDsave
+    __endasm;
+        
+    /*g. write the current stack pointer to the saved stack
+        pointer array for this newly created thread ID
+    h. set SP to the saved SP in step c.*/
+    SSPointers[i] = SP;
+    SP = SP_save;
+    /*i. finally, return the newly created thread ID. */    
+    return i;  
 }
 
 /*
@@ -204,10 +231,14 @@ void ThreadExit(void)
          * Q: What happens if there are no more valid threads?
          */
     bitmap[IDnum] = 0;
-    while(bitmap[IDnum]<=0){
-        if (IDnum == MAXTHREADS - 1){
+    while (bitmap[IDnum] <= 0)
+    {
+        if (IDnum == MAXTHREADS - 1)
+        {
             IDnum = 0;
-        }else{
+        }
+        else
+        {
             IDnum++;
         }
     }

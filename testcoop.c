@@ -16,6 +16,7 @@
 
 __idata __at(0x32) char buffer;
 __idata __at(0x40) char buffer_temp;
+__idata __at(0x3F) char proof;
 
 /* [8 pts] for this function
  * the producer in this test program generates one characters at a
@@ -33,6 +34,7 @@ void Producer(void)
     buffer_temp = 'a';
     while (1)
     {
+        proof = 1;
         /* @@@ [6 pt]
                  * wait for the buffer to be available, 
                  * and then write the new data into the buffer */
@@ -63,6 +65,7 @@ void Consumer(void)
     TR1 = 1;
     while (1)
     {
+        proof = 2;
         /* @@@ [2 pt] wait for new data from producer
                  * @@@ [6 pt] write data to serial port Tx, 
                  * poll for Tx to finish writing (TI),
@@ -100,6 +103,7 @@ void main(void)
            * Because both are infinite loops, there is no loop
            * in this function and no return.
            */
+    proof=0;
     buffer = 0;
     buffer_temp = 'a';
     SBUF = 0;
